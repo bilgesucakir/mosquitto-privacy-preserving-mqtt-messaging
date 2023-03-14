@@ -32,13 +32,16 @@ Contributors:
 
 #include "uthash.h"
 
+/*### context__init ###
+Burcu: her client connectionı (bir socket) için bir context yaratıp ona
+bu connection ile ilgili bazı bilgileri veriyor */
 struct mosquitto *context__init(mosq_sock_t sock)
 {
 	struct mosquitto *context;
 	char address[1024];
-
 	context = mosquitto__calloc(1, sizeof(struct mosquitto));
-	if(!context) return NULL;
+	if (!context)
+		return NULL;
 
 #ifdef WITH_EPOLL
 	context->ident = id_client;
@@ -72,11 +75,15 @@ struct mosquitto *context__init(mosq_sock_t sock)
 	context->out_packet_count = 0;
 
 	context->address = NULL;
-	if((int)sock >= 0){
-		if(!net__socket_get_address(sock, address, 1024, &context->remote_port)){
+	if ((int)sock >= 0)
+	{
+		if (!net__socket_get_address(sock, address, 1024, &context->remote_port))
+		/*Burcu: */
+		{
 			context->address = mosquitto__strdup(address);
 		}
-		if(!context->address){
+		if (!context->address)
+		{
 			/* getpeername and inet_ntop failed and not a bridge */
 			mosquitto__free(context);
 			return NULL;
@@ -92,7 +99,8 @@ struct mosquitto *context__init(mosq_sock_t sock)
 	context->ssl = NULL;
 #endif
 
-	if((int)context->sock >= 0){
+	if ((int)context->sock >= 0)
+	{
 		HASH_ADD(hh_sock, db.contexts_by_sock, sock, sizeof(context->sock), context);
 	}
 	return context;
@@ -108,14 +116,17 @@ void context__cleanup(struct mosquitto *context, bool force_free)
 {
 	struct mosquitto__packet *packet;
 
-	if(!context) return;
+	if (!context)
+		return;
 
-	if(force_free){
+	if (force_free)
+	{
 		context->clean_start = true;
 	}
 
 #ifdef WITH_BRIDGE
-	if(context->bridge){
+	if (context->bridge)
+	{
 		bridge__cleanup(context);
 	}
 #endif
@@ -132,7 +143,8 @@ void context__cleanup(struct mosquitto *context, bool force_free)
 	context->password = NULL;
 
 	net__socket_close(context);
-	if(force_free){
+	if (force_free)
+	{
 		sub__clean_session(context);
 	}
 	db__messages_delete(context, force_free);
@@ -142,18 +154,21 @@ void context__cleanup(struct mosquitto *context, bool force_free)
 
 	context__send_will(context);
 
-	if(context->id){
+	if (context->id)
+	{
 		context__remove_from_by_id(context);
 		mosquitto__free(context->id);
 		context->id = NULL;
 	}
 	packet__cleanup(&(context->in_packet));
-	if(context->current_out_packet){
+	if (context->current_out_packet)
+	{
 		packet__cleanup(context->current_out_packet);
 		mosquitto__free(context->current_out_packet);
 		context->current_out_packet = NULL;
 	}
-	while(context->out_packet){
+	while (context->out_packet)
+	{
 		packet__cleanup(context->out_packet);
 		packet = context->out_packet;
 		context->out_packet = context->out_packet->next;
@@ -161,52 +176,56 @@ void context__cleanup(struct mosquitto *context, bool force_free)
 	}
 	context->out_packet_count = 0;
 #if defined(WITH_BROKER) && defined(__GLIBC__) && defined(WITH_ADNS)
-	if(context->adns){
+	if (context->adns)
+	{
 		gai_cancel(context->adns);
 		mosquitto__free((struct addrinfo *)context->adns->ar_request);
 		mosquitto__free(context->adns);
 	}
 #endif
-	if(force_free){
+	if (force_free)
+	{
 		mosquitto__free(context);
 	}
 }
 
-
 void context__send_will(struct mosquitto *ctxt)
 {
-	if(ctxt->state != mosq_cs_disconnecting && ctxt->will){
-		if(ctxt->will_delay_interval > 0){
+	if (ctxt->state != mosq_cs_disconnecting && ctxt->will)
+	{
+		if (ctxt->will_delay_interval > 0)
+		{
 			will_delay__add(ctxt);
 			return;
 		}
 
-		if(mosquitto_acl_check(ctxt,
-					ctxt->will->msg.topic,
-					(uint32_t)ctxt->will->msg.payloadlen,
-					ctxt->will->msg.payload,
-					(uint8_t)ctxt->will->msg.qos,
-					ctxt->will->msg.retain,
-					MOSQ_ACL_WRITE) == MOSQ_ERR_SUCCESS){
+		if (mosquitto_acl_check(ctxt,
+								ctxt->will->msg.topic,
+								(uint32_t)ctxt->will->msg.payloadlen,
+								ctxt->will->msg.payload,
+								(uint8_t)ctxt->will->msg.qos,
+								ctxt->will->msg.retain,
+								MOSQ_ACL_WRITE) == MOSQ_ERR_SUCCESS)
+		{
 
 			/* Unexpected disconnect, queue the client will. */
 			db__messages_easy_queue(ctxt,
-					ctxt->will->msg.topic,
-					(uint8_t)ctxt->will->msg.qos,
-					(uint32_t)ctxt->will->msg.payloadlen,
-					ctxt->will->msg.payload,
-					ctxt->will->msg.retain,
-					ctxt->will->expiry_interval,
-					&ctxt->will->properties);
+									ctxt->will->msg.topic,
+									(uint8_t)ctxt->will->msg.qos,
+									(uint32_t)ctxt->will->msg.payloadlen,
+									ctxt->will->msg.payload,
+									ctxt->will->msg.retain,
+									ctxt->will->expiry_interval,
+									&ctxt->will->properties);
 		}
 	}
 	will__clear(ctxt);
 }
 
-
 void context__disconnect(struct mosquitto *context)
 {
-	if(mosquitto__get_state(context) == mosq_cs_disconnected){
+	if (mosquitto__get_state(context) == mosq_cs_disconnected)
+	{
 		return;
 	}
 
@@ -214,18 +233,22 @@ void context__disconnect(struct mosquitto *context)
 
 	context__send_will(context);
 	net__socket_close(context);
-	if(context->session_expiry_interval == 0){
+	if (context->session_expiry_interval == 0)
+	{
 		/* Client session is due to be expired now */
 #ifdef WITH_BRIDGE
-		if(context->bridge == NULL)
+		if (context->bridge == NULL)
 #endif
 		{
-			if(context->will_delay_interval == 0){
+			if (context->will_delay_interval == 0)
+			{
 				/* This will be done later, after the will is published for delay>0. */
 				context__add_to_disused(context);
 			}
 		}
-	}else{
+	}
+	else
+	{
 		session_expiry__add(context);
 	}
 	keepalive__remove(context);
@@ -234,11 +257,13 @@ void context__disconnect(struct mosquitto *context)
 
 void context__add_to_disused(struct mosquitto *context)
 {
-	if(context->state == mosq_cs_disused) return;
+	if (context->state == mosq_cs_disused)
+		return;
 
 	mosquitto__set_state(context, mosq_cs_disused);
 
-	if(context->id){
+	if (context->id)
+	{
 		context__remove_from_by_id(context);
 		mosquitto__free(context->id);
 		context->id = NULL;
@@ -257,20 +282,26 @@ void context__free_disused(void)
 
 	context = db.ll_for_free;
 	db.ll_for_free = NULL;
-	while(context){
+	while (context)
+	{
 #ifdef WITH_WEBSOCKETS
-		if(context->wsi){
+		if (context->wsi)
+		{
 			/* Don't delete yet, lws hasn't finished with it */
-			if(last){
+			if (last)
+			{
 				last->for_free_next = context;
-			}else{
+			}
+			else
+			{
 				db.ll_for_free = context;
 			}
 			next = context->for_free_next;
 			context->for_free_next = NULL;
 			last = context;
 			context = next;
-		}else
+		}
+		else
 #endif
 		{
 			next = context->for_free_next;
@@ -280,26 +311,26 @@ void context__free_disused(void)
 	}
 }
 
-
 void context__add_to_by_id(struct mosquitto *context)
 {
-	if(context->in_by_id == false){
+	if (context->in_by_id == false)
+	{
 		context->in_by_id = true;
 		HASH_ADD_KEYPTR(hh_id, db.contexts_by_id, context->id, strlen(context->id), context);
 	}
 }
 
-
 void context__remove_from_by_id(struct mosquitto *context)
 {
 	struct mosquitto *context_found;
 
-	if(context->in_by_id == true && context->id){
+	if (context->in_by_id == true && context->id)
+	{
 		HASH_FIND(hh_id, db.contexts_by_id, context->id, strlen(context->id), context_found);
-		if(context_found){
+		if (context_found)
+		{
 			HASH_DELETE(hh_id, db.contexts_by_id, context_found);
 		}
 		context->in_by_id = false;
 	}
 }
-
